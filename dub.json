@@ -1,0 +1,15 @@
+{
+    "name": "wave-d",
+    "description": "WAV file loader.",
+    "homepage": "http://github.com/p0nce/wave-d/",
+    "license": "public domain",
+
+    "targetType": "library",
+
+    "authors": [
+        "ponce"
+    ],
+
+    "sourcePaths": [ "." ],
+    "importPaths": [ "." ]
+}
