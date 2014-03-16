@@ -8,9 +8,7 @@ wave-d is a tiny library to load WAV audio files.
 See UNLICENSE.txt
 
 
-## Licenses
-
-See UNLICENSE.txt
+## Usage
 
 
 ```d
