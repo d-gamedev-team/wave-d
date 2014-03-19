@@ -43,11 +43,6 @@ uint stb_vorbis_get_file_offset(stb_vorbis *f)
     return f.stream - f.stream_start;   
 }
 
-// this function return the total length of the vorbis stream
-float stb_vorbis_stream_length_in_seconds(stb_vorbis *f)
-{
-    return stb_vorbis_stream_length_in_samples(f) / cast(float)(f.sample_rate);
-}
 
 ////////   ERROR CODES
 
@@ -206,15 +201,6 @@ struct Mode
    uint16 transformtype;
 }
 
-struct CRCscan
-{
-   uint32  goal_crc;    // expected crc if match
-   int     bytes_left;  // bytes left in packet
-   uint32  crc_so_far;  // running crc
-   int     bytes_done;  // bytes processed in _current_ chunk
-   uint32  sample_loc;  // granule pos encoded in page
-}
-
 struct ProbedPage
 {
    uint32 page_start, page_end;
@@ -244,11 +230,6 @@ struct stb_vorbis
    uint32 first_audio_page_offset;
 
    ProbedPage p_first, p_last;
-
-  // memory management
-   stb_vorbis_alloc alloc;
-   int setup_offset;
-   int temp_offset;
 
   // run-time results
    int eof;
@@ -314,9 +295,6 @@ struct stb_vorbis
    int discard_samples_deferred;
    uint32 samples_output;
 
-  // push mode scanning
-   int page_crc_tests; // only in push_mode: number of tests active; -1 if not searching
-
   // sample-access
    int channel_buffer_start;
    int channel_buffer_end;
@@ -349,28 +327,22 @@ void* temp_alloc(vorb *f, size_t size)
     return setup_malloc(size);
 }
 
- void temp_alloc(vorb *f, void* p)
+void temp_free(vorb *f, void* p)
 {
     return setup_free(p);
 }
 
-#define temp_alloc(f,size)              (f.alloc.alloc_buffer ? setup_temp_malloc(f,size) : alloca(size))
-#ifdef dealloca
-#define temp_free(f,p)                  (f.alloc.alloc_buffer ? 0 : dealloca(size))
-#else
-#define temp_free(f,p)                  0
-#endif
-#define temp_alloc_save(f)              ((f).temp_offset)
-#define temp_alloc_restore(f,p)         ((f).temp_offset = (p))
-
-#define temp_block_array(f,count,size)  make_block_array(temp_alloc(f,array_size_required(count,size)), count, size)
+void* temp_block_array(vorb *f, int count, int size)
+{
+    return make_block_array(temp_alloc(f, array_size_required(count,size)), count, size);
+}
 
 // given a sufficiently large block of memory, make an array of pointers to subblocks of it
 static void *make_block_array(void *mem, int count, int size)
 {
    int i;
-   void ** p = (void **) mem;
-   char *q = (char *) (p + count);
+   void ** p = cast(void **) mem;
+   char *q = cast(char *) (p + count);
    for (i=0; i < count; ++i) {
       p[i] = q;
       q += size;
@@ -399,26 +371,6 @@ static void setup_temp_free(vorb *f, void *p, size_t sz)
 {   
    free(p);
 }
-
-#define CRC32_POLY    0x04c11db7   // from spec
-
-static uint32 crc_table[256];
-static void crc32_init(void)
-{
-   int i,j;
-   uint32 s;
-   for(i=0; i < 256; i++) {
-      for (s=i<<24, j=0; j < 8; ++j)
-         s = (s << 1) ^ (s >= (1<<31) ? CRC32_POLY : 0);
-      crc_table[i] = s;
-   }
-}
-
-static uint32 crc32_update(uint32 crc, uint8 byte)
-{
-   return (crc << 8) ^ crc_table[byte ^ (crc >> 24)];
-}
-
 
 // used in setup, and for huffman that doesn't go fast path
 static unsigned int bit_reverse(unsigned int n)
@@ -1424,7 +1376,6 @@ static void decode_residue(vorb *f, float *residue_buffers[], int ch, int n, int
    int classwords = f.codebooks[c].dimensions;
    int n_read = r.end - r.begin;
    int part_read = n_read / r.part_size;
-   int temp_alloc_point = temp_alloc_save(f);
    uint8 ***part_classdata = (uint8 ***) temp_block_array(f,f.channels, part_read * sizeof(**part_classdata));
    
    for (i=0; i < ch; ++i)
@@ -1562,7 +1513,6 @@ static void decode_residue(vorb *f, float *residue_buffers[], int ch, int n, int
       }
    }
   done:
-   temp_alloc_restore(f,temp_alloc_point);
 }
 
 
@@ -1917,7 +1867,6 @@ static void inverse_mdct(float *buffer, int n, vorb *f, int blocktype)
    int n2 = n >> 1, n4 = n >> 2, n8 = n >> 3, l;
    int n3_4 = n - n4, ld;
    // @OPTIMIZE: reduce register pressure by using fewer variables?
-   int save_point = temp_alloc_save(f);
    float *buf2 = (float *) temp_alloc(f, n2 * sizeof(*buf2));
    float *u=NULL,*v=NULL;
    // twiddle factors
@@ -2210,7 +2159,6 @@ static void inverse_mdct(float *buffer, int n, vorb *f, int blocktype)
       }
    }
 
-   temp_alloc_restore(f,save_point);
 }
 
 #if 0
@@ -2785,8 +2733,6 @@ static int start_decoder(vorb *f)
    // third packet!
    if (!start_packet(f))                            return FALSE;
 
-      crc32_init(); // always init it, to avoid multithread race conditions
-
    if (get8_packet(f) != VORBIS_packet_setup)       return error(f, VORBIS_invalid_setup);
    for (i=0; i < 6; ++i) header[i] = get8_packet(f);
    if (!vorbis_validate(header))                    return error(f, VORBIS_invalid_setup);
@@ -3265,7 +3211,6 @@ static void vorbis_init(stb_vorbis *p)
    p.error = VORBIS__no_error;
    p.stream = NULL;
    p.codebooks = NULL;
-   p.page_crc_tests = -1;   
 }
 
 // get general information about the file
@@ -3294,303 +3239,6 @@ static stb_vorbis * vorbis_alloc(stb_vorbis *f)
    stb_vorbis *p = (stb_vorbis *) setup_malloc(f, sizeof(*p));
    return p;
 }
-
-
-#ifndef STB_VORBIS_NO_PULLDATA_API
-//
-// DATA-PULLING API
-//
-
-static uint32 vorbis_find_page(stb_vorbis *f, uint32 *end, uint32 *last)
-{
-   for(;;) {
-      int n;
-      if (f.eof) return 0;
-      n = get8(f);
-      if (n == 0x4f) { // page header
-         unsigned int retry_loc = stb_vorbis_get_file_offset(f);
-         int i;
-         // check if we're off the end of a file_section stream
-         if (retry_loc - 25 > f.stream_len)
-            return 0;
-         // check the rest of the header
-         for (i=1; i < 4; ++i)
-            if (get8(f) != ogg_page_header[i])
-               break;
-         if (f.eof) return 0;
-         if (i == 4) {
-            uint8 header[27];
-            uint32 i, crc, goal, len;
-            for (i=0; i < 4; ++i)
-               header[i] = ogg_page_header[i];
-            for (; i < 27; ++i)
-               header[i] = get8(f);
-            if (f.eof) return 0;
-            if (header[4] != 0) goto invalid;
-            goal = header[22] + (header[23] << 8) + (header[24]<<16) + (header[25]<<24);
-            for (i=22; i < 26; ++i)
-               header[i] = 0;
-            crc = 0;
-            for (i=0; i < 27; ++i)
-               crc = crc32_update(crc, header[i]);
-            len = 0;
-            for (i=0; i < header[26]; ++i) {
-               int s = get8(f);
-               crc = crc32_update(crc, s);
-               len += s;
-            }
-            if (len && f.eof) return 0;
-            for (i=0; i < len; ++i)
-               crc = crc32_update(crc, get8(f));
-            // finished parsing probable page
-            if (crc == goal) {
-               // we could now check that it's either got the last
-               // page flag set, OR it's followed by the capture
-               // pattern, but I guess TECHNICALLY you could have
-               // a file with garbage between each ogg page and recover
-               // from it automatically? So even though that paranoia
-               // might decrease the chance of an invalid decode by
-               // another 2^32, not worth it since it would hose those
-               // invalid-but-useful files?
-               if (end)
-                  *end = stb_vorbis_get_file_offset(f);
-               if (last)
-                  if (header[5] & 0x04)
-                     *last = 1;
-                  else
-                     *last = 0;
-               set_file_offset(f, retry_loc-1);
-               return 1;
-            }
-         }
-        invalid:
-         // not a valid page, so rewind and look for next one
-         set_file_offset(f, retry_loc);
-      }
-   }
-}
-
-// seek is implemented with 'interpolation search'--this is like
-// binary search, but we use the data values to estimate the likely
-// location of the data item (plus a bit of a bias so when the
-// estimation is wrong we don't waste overly much time)
-
-#define SAMPLE_unknown  0xffffffff
-
-
-// ogg vorbis, in its insane infinite wisdom, only provides
-// information about the sample at the END of the page.
-// therefore we COULD have the data we need in the current
-// page, and not know it. we could just use the end location
-// as our only knowledge for bounds, seek back, and eventually
-// the binary search finds it. or we can try to be smart and
-// not waste time trying to locate more pages. we try to be
-// smart, since this data is already in memory anyway, so
-// doing needless I/O would be crazy!
-static int vorbis_analyze_page(stb_vorbis *f, ProbedPage *z)
-{
-   uint8 header[27], lacing[255];
-   uint8 packet_type[255];
-   int num_packet, packet_start, previous =0;
-   int i,len;
-   uint32 samples;
-
-   // record where the page starts
-   z.page_start = stb_vorbis_get_file_offset(f);
-
-   // parse the header
-   getn(f, header, 27);
-   assert(header[0] == 'O' && header[1] == 'g' && header[2] == 'g' && header[3] == 'S');
-   getn(f, lacing, header[26]);
-
-   // determine the length of the payload
-   len = 0;
-   for (i=0; i < header[26]; ++i)
-      len += lacing[i];
-
-   // this implies where the page ends
-   z.page_end = z.page_start + 27 + header[26] + len;
-
-   // read the last-decoded sample out of the data
-   z.last_decoded_sample = header[6] + (header[7] << 8) + (header[8] << 16) + (header[9] << 16);
-
-   if (header[5] & 4) {
-      // if this is the last page, it's not possible to work
-      // backwards to figure out the first sample! whoops! fuck.
-      z.first_decoded_sample = SAMPLE_unknown;
-      set_file_offset(f, z.page_start);
-      return 1;
-   }
-
-   // scan through the frames to determine the sample-count of each one...
-   // our goal is the sample # of the first fully-decoded sample on the
-   // page, which is the first decoded sample of the 2nd page
-
-   num_packet=0;
-
-   packet_start = ((header[5] & 1) == 0);
-
-   for (i=0; i < header[26]; ++i) {
-      if (packet_start) {
-         uint8 n,b,m;
-         if (lacing[i] == 0) goto bail; // trying to read from zero-length packet
-         n = get8(f);
-         // if bottom bit is non-zero, we've got corruption
-         if (n & 1) goto bail;
-         n >>= 1;
-         b = ilog(f.mode_count-1);
-         m = n >> b;
-         n &= (1 << b)-1;
-         if (n >= f.mode_count) goto bail;
-         if (num_packet == 0 && f.mode_config[n].blockflag)
-            previous = (m & 1);
-         packet_type[num_packet++] = f.mode_config[n].blockflag;
-         skip(f, lacing[i]-1);
-      } else
-         skip(f, lacing[i]);
-      packet_start = (lacing[i] < 255);
-   }
-
-   // now that we know the sizes of all the pages, we can start determining
-   // how much sample data there is.
-
-   samples = 0;
-
-   // for the last packet, we step by its whole length, because the definition
-   // is that we encoded the end sample loc of the 'last packet completed',
-   // where 'completed' refers to packets being split, and we are left to guess
-   // what 'end sample loc' means. we assume it means ignoring the fact that
-   // the last half of the data is useless without windowing against the next
-   // packet... (so it's not REALLY complete in that sense)
-   if (num_packet > 1)
-      samples += f.blocksize[packet_type[num_packet-1]];
-
-   for (i=num_packet-2; i >= 1; --i) {
-      // now, for this packet, how many samples do we have that
-      // do not overlap the following packet?
-      if (packet_type[i] == 1)
-         if (packet_type[i+1] == 1)
-            samples += f.blocksize_1 >> 1;
-         else
-            samples += ((f.blocksize_1 - f.blocksize_0) >> 2) + (f.blocksize_0 >> 1);
-      else
-         samples += f.blocksize_0 >> 1;
-   }
-   // now, at this point, we've rewound to the very beginning of the
-   // _second_ packet. if we entirely discard the first packet after
-   // a seek, this will be exactly the right sample number. HOWEVER!
-   // we can't as easily compute this number for the LAST page. The
-   // only way to get the sample offset of the LAST page is to use
-   // the end loc from the previous page. But what that returns us
-   // is _exactly_ the place where we get our first non-overlapped
-   // sample. (I think. Stupid spec for being ambiguous.) So for
-   // consistency it's better to do that here, too. However, that
-   // will then require us to NOT discard all of the first frame we
-   // decode, in some cases, which means an even weirder frame size
-   // and extra code. what a fucking pain.
-   
-   // we're going to discard the first packet if we
-   // start the seek here, so we don't care about it. (we could actually
-   // do better; if the first packet is long, and the previous packet
-   // is short, there's actually data in the first half of the first
-   // packet that doesn't need discarding... but not worth paying the
-   // effort of tracking that of that here and in the seeking logic)
-   // except crap, if we infer it from the _previous_ packet's end
-   // location, we DO need to use that definition... and we HAVE to
-   // infer the start loc of the LAST packet from the previous packet's
-   // end location. fuck you, ogg vorbis.
-
-   z.first_decoded_sample = z.last_decoded_sample - samples;
-
-   // restore file state to where we were
-   set_file_offset(f, z.page_start);
-   return 1;
-
-   // restore file state to where we were
-  bail:
-   set_file_offset(f, z.page_start);
-   return 0;
-}
-
-
-unsigned int stb_vorbis_stream_length_in_samples(stb_vorbis *f)
-{
-   unsigned int restore_offset, previous_safe;
-   unsigned int end, last_page_loc;
-
-   if (!f.total_samples) {
-      int last;
-      uint32 lo,hi;
-      char header[6];
-
-      // first, store the current decode position so we can restore it
-      restore_offset = stb_vorbis_get_file_offset(f);
-
-      // now we want to seek back 64K from the end (the last page must
-      // be at most a little less than 64K, but let's allow a little slop)
-      if (f.stream_len >= 65536 && f.stream_len-65536 >= f.first_audio_page_offset)
-         previous_safe = f.stream_len - 65536;
-      else
-         previous_safe = f.first_audio_page_offset;
-
-      set_file_offset(f, previous_safe);
-      // previous_safe is now our candidate 'earliest known place that seeking
-      // to will lead to the final page'
-
-      if (!vorbis_find_page(f, &end, (int unsigned *)&last)) {
-         // if we can't find a page, we're hosed!
-         f.error = VORBIS_cant_find_last_page;
-         f.total_samples = 0xffffffff;
-         goto done;
-      }
-
-      // check if there are more pages
-      last_page_loc = stb_vorbis_get_file_offset(f);
-
-      // stop when the last_page flag is set, not when we reach eof;
-      // this allows us to stop short of a 'file_section' end without
-      // explicitly checking the length of the section
-      while (!last) {
-         set_file_offset(f, end);
-         if (!vorbis_find_page(f, &end, (int unsigned *)&last)) {
-            // the last page we found didn't have the 'last page' flag
-            // set. whoops!
-            break;
-         }
-         previous_safe = last_page_loc+1;
-         last_page_loc = stb_vorbis_get_file_offset(f);
-      }
-
-      set_file_offset(f, last_page_loc);
-
-      // parse the header
-      getn(f, (unsigned char *)header, 6);
-      // extract the absolute granule position
-      lo = get32(f);
-      hi = get32(f);
-      if (lo == 0xffffffff && hi == 0xffffffff) {
-         f.error = VORBIS_cant_find_last_page;
-         f.total_samples = SAMPLE_unknown;
-         goto done;
-      }
-      if (hi)
-         lo = 0xfffffffe; // saturate
-      f.total_samples = lo;
-
-      f.p_last.page_start = last_page_loc;
-      f.p_last.page_end   = end;
-      f.p_last.last_decoded_sample = lo;
-      f.p_last.first_decoded_sample = SAMPLE_unknown;
-      f.p_last.after_previous_page_start = previous_safe;
-
-     done:
-      set_file_offset(f, restore_offset);
-   }
-   return f.total_samples == SAMPLE_unknown ? 0 : f.total_samples;
-}
-
-
-
 
 
 // decode the next frame and return the number of samples. the number of
