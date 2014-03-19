@@ -129,35 +129,64 @@ void writeLE(int NumBytes, R)(ref R output, IntegerLargerThan!NumBytes n) if (is
 
 alias pop24bitsLE(R) = popInteger!(R, 3, false, true);
 
+
+// read/write 32-bits float
+
+union float_uint
+{
+    float f;
+    uint i;
+}
+
 float popFloatLE(R)(ref R input) if (isInputRange!R)
 {
-    union float_uint
-    {
-        float f;
-        uint i;
-    }
     float_uint fi;
     fi.i = popLE!uint(input);
     return fi.f;
 }
 
+void writeFloatLE(R)(ref R output, float x) if (isOutputRange!(R, ubyte))
+{
+    float_uint fi;
+    fi.f = x;
+    writeLE!uint(output, fi.i);
+}
+
+
+// read/write 64-bits float
+
+union double_ulong
+{
+    double d;
+    ulong i;
+}
+
 float popDoubleLE(R)(ref R input) if (isInputRange!R)
 {
-    union double_ulong
-    {
-        double d;
-        ulong i;
-    }
     double_ulong du;
     du.i = popLE!ulong(input);
     return du.d;
 }
 
+void writeDoubleLE(R)(ref R output, double x) if (isOutputRange!(R, ubyte))
+{
+    double_ulong du;
+    du.d = x;
+    writeLE!ulong(output, du.i);
+}
+
 // Reads RIFF chunk header.
-void getChunkHeader(R)(ref R input, out uint chunkId, out uint chunkSize) if (isInputRange!R)
+void getRIFFChunkHeader(R)(ref R input, out uint chunkId, out uint chunkSize) if (isInputRange!R)
 {
     chunkId = popBE!uint(input);
     chunkSize = popLE!uint(input);
+}
+
+// Writes RIFF chunk header (you have to count size manually for now...).
+void writeRIFFChunkHeader(R)(ref R output, uint chunkId, uint chunkSize) if (isOutputRange!(R, ubyte))
+{
+    writeBE!uint(output, chunkId);
+    writeLE!uint(output, chunkSize);
 }
 
 template RIFFChunkId(string id)

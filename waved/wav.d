@@ -9,6 +9,12 @@ import waved.utils;
 /// Supports Microsoft WAV audio file format.
 
 
+// wFormatTag
+immutable int LinearPCM = 0x0001;
+immutable int FloatingPointIEEE = 0x0003;
+immutable int WAVE_FORMAT_EXTENSIBLE = 0xFFFE;
+
+
 /// Decodes a WAV file.
 /// Throws: WavedException on error.
 Sound decodeWAV(string filepath)
@@ -25,20 +31,16 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
     // check RIFF header
     {
         uint chunkId, chunkSize;
-        getChunkHeader(input, chunkId, chunkSize);
+        getRIFFChunkHeader(input, chunkId, chunkSize);
         if (chunkId != RIFFChunkId!"RIFF")
             throw new WavedException("Expected RIFF chunk.");
 
         if (chunkSize < 4)
-            throw new WavedException("RIFF chunk is too small to contains a format.");
+            throw new WavedException("RIFF chunk is too small to contain a format.");
 
         if (popBE!uint(input) !=  RIFFChunkId!"WAVE")
             throw new WavedException("Expected WAVE format.");
     }    
-
-    immutable int LinearPCM = 0x0001;
-    immutable int FloatingPointIEEE = 0x0003;
-    immutable int WAVE_FORMAT_EXTENSIBLE = 0xFFFE;
 
     bool foundFmt = false;
     bool foundData = false;
@@ -57,7 +59,7 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
     while (!input.empty)
     {
         uint chunkId, chunkSize;
-        getChunkHeader(input, chunkId, chunkSize); 
+        getRIFFChunkHeader(input, chunkId, chunkSize); 
         if (chunkId == RIFFChunkId!"fmt ")
         {
             if (foundFmt)
@@ -68,7 +70,7 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
             if (chunkSize < 16)
                 throw new WavedException("Expected at least 16 bytes in 'fmt ' chunk."); // found in real-world for the moment: 16 or 40 bytes
 
-            audioFormat = popLE!ushort(input);            
+            audioFormat = popLE!ushort(input);
             if (audioFormat == WAVE_FORMAT_EXTENSIBLE)
                 throw new WavedException("No support for format WAVE_FORMAT_EXTENSIBLE yet."); // Reference: http://msdn.microsoft.com/en-us/windows/hardware/gg463006.aspx
             
@@ -191,11 +193,36 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
 
 /// Encodes a WAV.
 void encodeWAV(R)(Sound sound, R output) if (isOutputRange!R)
-{   
-    //TODO
+{
+    // for now let's just pretend always saving to 32-bit float is OK
+
+
+    // Avoid a number of edge cases.
+    if (sound.numChannels < 0 || sound.numChannels > 1024)
+        throw new WavedException(format("Can't save a WAV with %s channels.", sound.numChannels));
+
+    // RIFF header
+    output.writeRIFFChunkHeader(RIFFChunkId!"RIFF", 4 + (4 + 4 + 16) + (4 + 4 + float.sizeof * sound.data.length) );
+    output.writeBE!uint(RIFFChunkId!"WAVE");
+
+    // 'fmt ' sub-chunk
+    output.writeRIFFChunkHeader(RIFFChunkId!"fmt ", 0x10);
+    output.writeLE!ushort(FloatingPointIEEE);
+    
+    output.writeLE!ushort(cast(ushort)(sound.numChannels));
+    output.writeLE!uint(cast(ushort)(sound.sampleRate));
+
+    uint bytesPerSec = sound.sampleRate * sound.numChannels * float.sizeof;
+    output.writeLE!uint(bytesPerSec);
+
+    int bytesPerFrame = sound.numChannels * float.sizeof;
+    output.writeLE!ushort(cast(ushort)bytesPerFrame);
+
+    output.writeLE!ushort(32);
+
+
+    // data sub-chunk
+    foreach (float f; sound.data)
+        output.writeFloatLE(f);
 }
-
-
-
-
 
