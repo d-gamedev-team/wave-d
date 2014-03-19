@@ -1,6 +1,6 @@
 ## What's this?
 
-wave-d is a tiny library to load WAV audio files.
+wave-d is a tiny library to load/save WAV audio files.
 
 
 ## Licenses
@@ -18,10 +18,12 @@ import waved;
 
 void main()
 {
-    SoundFile sf = decodeWAVE("my_wav_file.wav");
+    Sound sound = decodeWAV("my_wav_file.wav");
     writefln("channels = %s", sf.numChannels);
     writefln("samplerate = %s", sf.sampleRate);
     writefln("samples = %s", sf.data.length);
+
+    sound.encodeWAV("copy.wav");
 }
 
 ```
