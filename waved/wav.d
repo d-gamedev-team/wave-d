@@ -119,7 +119,7 @@ SoundFile decodeWAVE(R)(R input) if (isInputRange!R)
                     for (uint i = 0; i < numSamples; ++i)
                         result.data[i] = popFloatLE(input);                  
                 }
-                else if (bytePerSample == 4)
+                else if (bytePerSample == 8)
                 {
                     for (uint i = 0; i < numSamples; ++i)
                         result.data[i] = popDoubleLE(input);
