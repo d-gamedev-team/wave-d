@@ -96,7 +96,7 @@ void writeInteger(R, int NumBytes, bool LittleEndian)(ref R output, IntegerLarge
     {
         for (int i = 0; i < NumBytes; ++i)
         {
-            ubyte b = (u >> ( (numBytes - 1 - i) * 8) ) & 255;
+            ubyte b = (u >> ( (NumBytes - 1 - i) * 8) ) & 255;
             output.put(b);
         }
     }
@@ -115,15 +115,15 @@ T popLE(T, R)(ref R input) if (isInputRange!R)
 }
 
 // Writes a big endian integer to output.
-void writeBE(int NumBytes, R)(ref R output, IntegerLargerThan!NumBytes n) if (isOutputRange!(R, ubyte))
+void writeBE(T, R)(ref R output, T n) if (isOutputRange!(R, ubyte))
 {
     writeInteger!(R, T.sizeof, false)(output, n);
 }
 
 // Writes a little endian integer to output.
-void writeLE(int NumBytes, R)(ref R output, IntegerLargerThan!NumBytes n) if (isOutputRange!(R, ubyte))
+void writeLE(T, R)(ref R output, T n) if (isOutputRange!(R, ubyte))
 {
-    popInteger!(R, T.sizeof, true)(output, n);
+    writeInteger!(R, T.sizeof, true)(output, n);
 }
 
 

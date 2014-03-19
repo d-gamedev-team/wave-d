@@ -2,6 +2,7 @@ module waved.wav;
 
 import std.range,
        std.file,
+       std.array,
        std.string;
 
 import waved.utils;
@@ -23,6 +24,14 @@ Sound decodeWAV(string filepath)
     return decodeWAV(bytes);
 }
 
+/// Encodes a WAV file.
+/// Throws: WavedException on error.
+void encodeWAV(Sound sound, string filepath)
+{
+    auto output = appender!(ubyte[])();
+    output.encodeWAV(sound);
+    std.file.write(filepath, output.data);
+}
 
 /// Decodes a WAV.
 /// Throws: WavedException on error.
@@ -192,7 +201,7 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
 
 
 /// Encodes a WAV.
-void encodeWAV(R)(Sound sound, R output) if (isOutputRange!R)
+void encodeWAV(R)(ref R output, Sound sound) if (isOutputRange!(R, ubyte))
 {
     // for now let's just pretend always saving to 32-bit float is OK
 
@@ -220,8 +229,8 @@ void encodeWAV(R)(Sound sound, R output) if (isOutputRange!R)
 
     output.writeLE!ushort(32);
 
-
     // data sub-chunk
+    output.writeRIFFChunkHeader(RIFFChunkId!"data", float.sizeof * sound.data.length);
     foreach (float f; sound.data)
         output.writeFloatLE(f);
 }
