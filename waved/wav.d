@@ -1,6 +1,6 @@
 module waved.wav;
 
-import std.range,      
+import std.range,
        std.file,
        std.string;
 
@@ -32,7 +32,7 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
         if (chunkSize < 4)
             throw new WavedException("RIFF chunk is too small to contains a format.");
 
-        if (popUintBE(input) !=  RIFFChunkId!"WAVE")
+        if (popBE!uint(input) !=  RIFFChunkId!"WAVE")
             throw new WavedException("Expected WAVE format.");
     }    
 
@@ -68,22 +68,22 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
             if (chunkSize < 16)
                 throw new WavedException("Expected at least 16 bytes in 'fmt ' chunk."); // found in real-world for the moment: 16 or 40 bytes
 
-            audioFormat = popUshortLE(input);            
+            audioFormat = popLE!ushort(input);            
             if (audioFormat == WAVE_FORMAT_EXTENSIBLE)
                 throw new WavedException("No support for format WAVE_FORMAT_EXTENSIBLE yet."); // Reference: http://msdn.microsoft.com/en-us/windows/hardware/gg463006.aspx
             
             if (audioFormat != LinearPCM && audioFormat != FloatingPointIEEE)
                 throw new WavedException(format("Unsupported audio format %s, only PCM and IEEE float are supported.", audioFormat));
 
-            numChannels = popUshortLE(input);
+            numChannels = popLE!ushort(input);
 
-            sampleRate = popUintLE(input);
+            sampleRate = popLE!uint(input);
             if (sampleRate <= 0)
                 throw new WavedException(format("Unsupported sample-rate %s.", cast(uint)sampleRate)); // we do not support sample-rate higher than 2^31hz
 
-            uint bytesPerSec = popUintLE(input);
-            int bytesPerFrame = popUshortLE(input);
-            bitsPerSample = popUshortLE(input);
+            uint bytesPerSec = popLE!uint(input);
+            int bytesPerFrame = popLE!ushort(input);
+            bitsPerSample = popLE!ushort(input);
 
             if (bitsPerSample != 8 && bitsPerSample != 16 && bitsPerSample != 24 && bitsPerSample != 32) 
                 throw new WavedException(format("Unsupported bitdepth %s.", cast(uint)bitsPerSample));
@@ -116,7 +116,7 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
                 if (bytePerSample == 4)
                 {
                     for (uint i = 0; i < numSamples; ++i)
-                        result.data[i] = popFloatLE(input);                  
+                        result.data[i] = popFloatLE(input);
                 }
                 else if (bytePerSample == 8)
                 {
@@ -132,7 +132,7 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
                 {
                     for (uint i = 0; i < numSamples; ++i)
                     {
-                        ubyte b = popByte(input);
+                        ubyte b = popUbyte(input);
                         result.data[i] = (b - 128) / 127.0;
                     }
                 }
@@ -140,7 +140,7 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
                 {
                     for (uint i = 0; i < numSamples; ++i)
                     {
-                        int s = popShortLE(input);
+                        int s = popLE!short(input);
                         result.data[i] = s / 32767.0;
                     }
                 }
@@ -148,7 +148,7 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
                 {
                     for (uint i = 0; i < numSamples; ++i)
                     {
-                        int s = pop24bitsLE(input);
+                        int s = pop24bitsLE!R(input);
                         result.data[i] = s / 8388607.0;
                     }
                 }
@@ -156,7 +156,7 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
                 {
                     for (uint i = 0; i < numSamples; ++i)
                     {
-                        int s = popIntLE(input);
+                        int s = popLE!int(input);
                         result.data[i] = s / 2147483648.0;
                     }
                 }
@@ -167,7 +167,6 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
                 assert(false); // should have been handled earlier, crash
 
             foundData = true;
-
         }
         else
         {
@@ -187,6 +186,13 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
     result.sampleRate = sampleRate;
 
     return result;
+}
+
+
+/// Encodes a WAV.
+void encodeWAV(R)(Sound sound, R output) if (isOutputRange!R)
+{   
+    //TODO
 }
 
 

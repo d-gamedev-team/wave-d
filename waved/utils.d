@@ -2,6 +2,7 @@ module waved.utils;
 
 import std.file,
        std.range,
+       std.traits,
        std.string,
        std.format;
 
@@ -24,117 +25,146 @@ final class WavedException : Exception
 }
 
 
-package
+private template IntegerLargerThan(int numBytes) if (numBytes >= 1 && numBytes <= 8)
 {
-    ubyte popByte(R)(ref R input) if (isInputRange!R)
-    {
-        if (input.empty)
-            throw new WavedException("Expected a byte, but end-of-input found.");
+    static if (numBytes == 1)
+        alias IntegerLargerThan = ubyte;
+    else static if (numBytes == 2)
+        alias IntegerLargerThan = ushort;
+    else static if (numBytes <= 4)
+        alias IntegerLargerThan = uint;
+    else
+        alias IntegerLargerThan = ulong;
+}
 
-        ubyte b = input.front;
-        input.popFront();
-        return b;
+ubyte popUbyte(R)(ref R input) if (isInputRange!R)
+{
+    if (input.empty)
+        throw new WavedException("Expected a byte, but end-of-input found.");
+
+    ubyte b = input.front;
+    input.popFront();
+    return b;
+}
+
+void skipBytes(R)(ref R input, int numBytes) if (isInputRange!R)
+{
+    for (int i = 0; i < numBytes; ++i)
+        popUbyte(input);
+}
+
+// Generic integer parsing
+auto popInteger(R, int NumBytes, bool WantSigned, bool LittleEndian)(ref R input) if (isInputRange!R)
+{
+    alias T = IntegerLargerThan!NumBytes;
+
+    T result = 0;
+
+    static if (LittleEndian)
+    {
+        for (int i = 0; i < NumBytes; ++i)
+            result |= ( cast(T)(popUbyte(input)) << (8 * i) );
+    }
+    else
+    {
+        for (int i = 0; i < NumBytes; ++i)
+            result = (result << 8) | popUbyte(input);
     }
 
-    void skipBytes(R)(ref R input, int numBytes) if (isInputRange!R)
-    {
-        for (int i = 0; i < numBytes; ++i)
-            popByte(input);
-    }
+    static if (WantSigned)
+        return cast(Signed!T)result;
+    else
+        return result;
+}
 
-    uint popUintBE(R)(ref R input) if (isInputRange!R)
-    {
-        ubyte b0 = popByte(input);
-        ubyte b1 = popByte(input);
-        ubyte b2 = popByte(input);
-        ubyte b3 = popByte(input);
-        return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
-    }
+// Generic integer writing
+void writeInteger(R, int NumBytes, bool LittleEndian)(ref R output, IntegerLargerThan!NumBytes n) if (isOutputRange!(R, ubyte))
+{
+    alias T = IntegerLargerThan!NumBytes;
 
-    uint popUintLE(R)(ref R input) if (isInputRange!R)
-    {
-        ubyte b0 = popByte(input);
-        ubyte b1 = popByte(input);
-        ubyte b2 = popByte(input);
-        ubyte b3 = popByte(input);
-        return (b3 << 24) | (b2 << 16) | (b1 << 8) | b0;
-    }
+    auto u = cast(Unsigned!T)n;
 
-    int popIntLE(R)(ref R input) if (isInputRange!R)
+    static if (LittleEndian)
     {
-        return cast(int)(popUintLE(input));
-    }
-
-    uint pop24bitsLE(R)(ref R input) if (isInputRange!R)
-    {
-        ubyte b0 = popByte(input);
-        ubyte b1 = popByte(input);
-        ubyte b2 = popByte(input);
-        return (b2 << 16) | (b1 << 8) | b0;
-    }
-
-    ushort popUshortLE(R)(ref R input) if (isInputRange!R)
-    {
-        ubyte b0 = popByte(input);
-        ubyte b1 = popByte(input);
-        return (b1 << 8) | b0;
-    }
-
-    short popShortLE(R)(ref R input) if (isInputRange!R)
-    {
-        return cast(short)popUshortLE(input);
-    }
-
-    ulong popUlongLE(R)(ref R input) if (isInputRange!R)
-    {
-        ulong b0 = popByte(input);
-        ulong b1 = popByte(input);
-        ulong b2 = popByte(input);
-        ulong b3 = popByte(input);
-        ulong b4 = popByte(input);
-        ulong b5 = popByte(input);
-        ulong b6 = popByte(input);
-        ulong b7 = popByte(input);
-        return (b7 << 56) | (b6 << 48) | (b5 << 40) | (b4 << 32) | (b3 << 24) | (b2 << 16) | (b1 << 8) | b0;
-    }
-
-    float popFloatLE(R)(ref R input) if (isInputRange!R)
-    {
-        union float_uint
+        for (int i = 0; i < NumBytes; ++i)
         {
-            float f;
-            uint i;
+            ubyte b = (u >> (i * 8)) & 255;
+            output.put(b);
         }
-        float_uint fi;
-        fi.i = popUintLE(input);
-        return fi.f;
     }
-
-    float popDoubleLE(R)(ref R input) if (isInputRange!R)
+    else
     {
-        union double_ulong
+        for (int i = 0; i < NumBytes; ++i)
         {
-            double d;
-            ulong i;
+            ubyte b = (u >> ( (numBytes - 1 - i) * 8) ) & 255;
+            output.put(b);
         }
-        double_ulong du;
-        du.i = popUlongLE(input);
-        return du.d;
     }
+}
 
-    // read RIFF chunk header
-    void getChunkHeader(R)(ref R input, out uint chunkId, out uint chunkSize) if (isInputRange!R)
-    {
-        chunkId = popUintBE(input);
-        chunkSize = popUintLE(input);
-    }
+// Reads a big endian integer from input.
+T popBE(T, R)(ref R input) if (isInputRange!R)
+{
+    return popInteger!(R, T.sizeof, isSigned!T, false)(input);
+}
 
-    template RIFFChunkId(string id)
+// Reads a little endian integer from input.
+T popLE(T, R)(ref R input) if (isInputRange!R)
+{
+    return popInteger!(R, T.sizeof, isSigned!T, true)(input);
+}
+
+// Writes a big endian integer to output.
+void writeBE(int NumBytes, R)(ref R output, IntegerLargerThan!NumBytes n) if (isOutputRange!(R, ubyte))
+{
+    writeInteger!(R, T.sizeof, false)(output, n);
+}
+
+// Writes a little endian integer to output.
+void writeLE(int NumBytes, R)(ref R output, IntegerLargerThan!NumBytes n) if (isOutputRange!(R, ubyte))
+{
+    popInteger!(R, T.sizeof, true)(output, n);
+}
+
+
+alias pop24bitsLE(R) = popInteger!(R, 3, false, true);
+
+float popFloatLE(R)(ref R input) if (isInputRange!R)
+{
+    union float_uint
     {
-        static assert(id.length == 4);
-        uint RIFFChunkId = (cast(ubyte)(id[0]) << 24) 
-            | (cast(ubyte)(id[1]) << 16)
-            | (cast(ubyte)(id[2]) << 8)
-            | (cast(ubyte)(id[3]));
+        float f;
+        uint i;
     }
+    float_uint fi;
+    fi.i = popLE!uint(input);
+    return fi.f;
+}
+
+float popDoubleLE(R)(ref R input) if (isInputRange!R)
+{
+    union double_ulong
+    {
+        double d;
+        ulong i;
+    }
+    double_ulong du;
+    du.i = popLE!ulong(input);
+    return du.d;
+}
+
+// Reads RIFF chunk header.
+void getChunkHeader(R)(ref R input, out uint chunkId, out uint chunkSize) if (isInputRange!R)
+{
+    chunkId = popBE!uint(input);
+    chunkSize = popLE!uint(input);
+}
+
+template RIFFChunkId(string id)
+{
+    static assert(id.length == 4);
+    uint RIFFChunkId = (cast(ubyte)(id[0]) << 24) 
+                     | (cast(ubyte)(id[1]) << 16)
+                     | (cast(ubyte)(id[2]) << 8)
+                     | (cast(ubyte)(id[3]));
 }
