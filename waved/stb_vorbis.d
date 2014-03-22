@@ -508,14 +508,14 @@ void compute_accelerated_huffman(Codebook *c)
          uint32 z = c.sparse ? bit_reverse(c.sorted_codewords[i]) : c.codewords[i];
          // set table entries for all bit combinations in the higher bits
          while (z < FAST_HUFFMAN_TABLE_SIZE) {
-             c.fast_huffman[z] = i;
+             c.fast_huffman[z] = cast(short)i;
              z += 1 << c.codeword_lengths[i];
          }
       }
    }
 }
 
-int uint32_compare(const void *p, const void *q)
+extern(C) int uint32_compare(const void *p, const void *q)
 {
    uint32 x = * cast(uint32 *) p;
    uint32 y = * cast(uint32 *) q;
@@ -550,7 +550,7 @@ void compute_sorted_huffman(Codebook *c, uint8 *lengths, uint32 *values)
          c.sorted_codewords[i] = bit_reverse(c.codewords[i]);
    }
 
-   qsort(c.sorted_codewords, c.sorted_entries, sizeof(c.sorted_codewords[0]), uint32_compare);
+   qsort(c.sorted_codewords, c.sorted_entries, c.sorted_codewords[0].sizeof, &uint32_compare);
    c.sorted_codewords[c.sorted_entries] = 0xffffffff;
 
    len = c.sparse ? c.sorted_entries : c.entries;
@@ -561,7 +561,7 @@ void compute_sorted_huffman(Codebook *c, uint8 *lengths, uint32 *values)
    // #1 requires extra storage, #2 is slow, #3 can use binary search!
    for (i=0; i < len; ++i) {
       int huff_len = c.sparse ? lengths[values[i]] : lengths[i];
-      if (include_in_sort(c,huff_len)) {
+      if (include_in_sort(c, cast(ubyte)huff_len)) {
          uint32 code = bit_reverse(c.codewords[i]);
          int x=0, n=c.sorted_entries;
          while (n > 1) {
@@ -577,7 +577,7 @@ void compute_sorted_huffman(Codebook *c, uint8 *lengths, uint32 *values)
          assert(c.sorted_codewords[x] == code);
          if (c.sparse) {
             c.sorted_values[x] = values[i];
-            c.codeword_lengths[x] = huff_len;
+            c.codeword_lengths[x] = cast(ubyte)huff_len;
          } else {
             c.sorted_values[x] = i;
          }
@@ -588,8 +588,8 @@ void compute_sorted_huffman(Codebook *c, uint8 *lengths, uint32 *values)
 // only run while parsing the header (3 times)
 int vorbis_validate(uint8 *data)
 {
-   static uint8 vorbis[6] = { 'v', 'o', 'r', 'b', 'i', 's' };
-   return memcmp(data, vorbis, 6) == 0;
+   static immutable uint8 vorbis[6] = [ 'v', 'o', 'r', 'b', 'i', 's' ];
+   return memcmp(data, vorbis.ptr, 6) == 0;
 }
 
 // called from setup only, once per code book
@@ -634,7 +634,7 @@ void compute_bitreverse(int n, uint16 *rev)
    int ld = ilog(n) - 1; // ilog is off-by-one from normal definitions
    int i, n8 = n >> 3;
    for (i=0; i < n8; ++i)
-      rev[i] = (bit_reverse(i) >> (32-ld+3)) << 2;
+      rev[i] = cast(ushort)( (bit_reverse(i) >> (32-ld+3)) << 2 );
 }
 
 int init_blocksize(vorb *f, int b, int n)
@@ -648,7 +648,7 @@ int init_blocksize(vorb *f, int b, int n)
    f.window[b] = cast(float *) setup_malloc(f, float.sizeof * n2);
    if (!f.window[b]) return error(f, VORBIS_outofmem);
    compute_window(n, f.window[b]);
-   f.bit_reverse[b] = cast(uint16 *) setup_malloc(f, sizeof(uint16) * n8);
+   f.bit_reverse[b] = cast(uint16 *) setup_malloc(f, uint16.sizeof * n8);
    if (!f.bit_reverse[b]) return error(f, VORBIS_outofmem);
    compute_bitreverse(n, f.bit_reverse[b]);
    return TRUE;
@@ -766,7 +766,7 @@ int start_page_no_capturepattern(vorb *f)
    get32(f);
    // page_segments
    f.segment_count = get8(f);
-   if (!getn(f, f.segments, f.segment_count))
+   if (!getn(f, f.segments.ptr, f.segment_count))
       return error(f, VORBIS_unexpected_eof);
    // assume we _don't_ know any the sample position of any segments
    f.end_seg_with_known_loc = -2;
@@ -782,11 +782,11 @@ int start_page_no_capturepattern(vorb *f)
       }
    }
    if (f.first_decode) {
-      int i,len;
+      int i2,len;
       ProbedPage p;
       len = 0;
-      for (i=0; i < f.segment_count; ++i)
-         len += f.segments[i];
+      for (i2=0; i2 < f.segment_count; ++i2)
+         len += f.segments[i2];
       len += 27 + f.segment_count;
       p.page_start = f.first_audio_page_offset;
       p.page_end = p.page_start + len;
@@ -858,7 +858,7 @@ int next_segment(vorb *f)
    if (f.next_seg >= f.segment_count)
       f.next_seg = -1;
    assert(f.bytes_in_seg == 0);
-   f.bytes_in_seg = len;
+   f.bytes_in_seg = cast(ubyte)len;
    return len;
 }
 
@@ -908,12 +908,12 @@ static uint32 get_bits(vorb *f, int n)
       }
       if (f.valid_bits == 0) f.acc = 0;
       while (f.valid_bits < n) {
-         int z = get8_packet_raw(f);
-         if (z == EOP) {
+         int z2 = get8_packet_raw(f);
+         if (z2 == EOP) {
             f.valid_bits = INVALID_BITS;
             return 0;
          }
-         f.acc += z << f.valid_bits;
+         f.acc += z2 << f.valid_bits;
          f.valid_bits += 8;
       }
    }
@@ -1235,7 +1235,7 @@ int predict_point(int x, int x0, int x1, int y0, int y1)
    int dy = y1 - y0;
    int adx = x1 - x0;
    // @OPTIMIZE: force int division to round in the right direction... is this necessary on x86?
-   int err = abs(dy) * (x - x0);
+   int err = std.math.abs(dy) * (x - x0);
    int off = err / adx;
    return dy < 0 ? y0 - off : y0 + off;
 }
@@ -1327,7 +1327,7 @@ void draw_line(float *output, int x0, int y0, int x1, int y1, int n)
 {
    int dy = y1 - y0;
    int adx = x1 - x0;
-   int ady = abs(dy);
+   int ady = std.math.abs(dy);
    int base;
    int x=x0,y=y0;
    int err = 0;
@@ -1339,7 +1339,7 @@ void draw_line(float *output, int x0, int y0, int x1, int y1, int n)
    else
       sy = base+1;
 
-   ady -= abs(base) * adx;
+   ady -= std.math.abs(base) * adx;
    if (x1 > n) x1 = n;
    LINE_OP(output[x], inverse_db_table[y]);
    for (++x; x < x1; ++x) {
@@ -1381,7 +1381,7 @@ void decode_residue(vorb *f, float *residue_buffers[], int ch, int n, int rn, ui
    int classwords = f.codebooks[c].dimensions;
    int n_read = r.end - r.begin;
    int part_read = n_read / r.part_size;
-   uint8 ***part_classdata = cast(uint8 ***) temp_block_array(f,f.channels, part_read * sizeof(**part_classdata));
+   uint8 ***part_classdata = cast(uint8 ***) temp_block_array(f,f.channels, part_read * (uint8*).sizeof);
    
    for (i=0; i < ch; ++i)
       if (!do_not_decode[i])
@@ -1402,26 +1402,26 @@ void decode_residue(vorb *f, float *residue_buffers[], int ch, int n, int rn, ui
                int z = r.begin + pcount*r.part_size;
                int c_inter = (z & 1), p_inter = z>>1;
                if (pass == 0) {
-                  Codebook *c = f.codebooks+r.classbook;
+                  Codebook *c2 = f.codebooks+r.classbook;
                   int q;
-                  q = codebook_decode_scalar(f,c);
-                  if (c.sparse) q = c.sorted_values[q];
+                  q = codebook_decode_scalar(f,c2);
+                  if (c2.sparse) q = c2.sorted_values[q];
                   if (q == EOP) return;
                   part_classdata[0][class_set] = r.classdata[q];
                }
                for (i=0; i < classwords && pcount < part_read; ++i, ++pcount) {
-                  int z = r.begin + pcount*r.part_size;
-                  int c = part_classdata[0][class_set][i];
-                  int b = r.residue_books[c][pass];
+                  int z2 = r.begin + pcount*r.part_size;
+                  int c2 = part_classdata[0][class_set][i];
+                  int b = r.residue_books[c2][pass];
                   if (b >= 0) {
                      Codebook *book = f.codebooks + b;
                      // saves 1%
-                     if (!codebook_decode_deinterleave_repeat_2(f, book, residue_buffers, &c_inter, &p_inter, n, r.part_size))
+                     if (!codebook_decode_deinterleave_repeat_2(f, book, residue_buffers.ptr, &c_inter, &p_inter, n, r.part_size))
                         return;
                   } else {
-                     z += r.part_size;
-                     c_inter = z & 1;
-                     p_inter = z >> 1;
+                     z2 += r.part_size;
+                     c_inter = z2 & 1;
+                     p_inter = z2 >> 1;
                   }
                }
                ++class_set;
@@ -1532,7 +1532,7 @@ void dct_iv_slow(float *buffer, int n)
    float x[2048];
    int i,j;
    int n2 = n >> 1, nmask = (n << 3) - 1;
-   memcpy(x, buffer, sizeof(*x) * n);
+   memcpy(x, buffer, (*x).sizeof * n);
    for (i=0; i < 8*n; ++i)
       mcos[i] = cast(float) cos(M_PI / 4 * i / n);
    for (i=0; i < n; ++i) {
