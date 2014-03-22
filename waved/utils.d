@@ -10,9 +10,28 @@ import std.file,
 /// The simple structure currently used in wave-d. Expect changes about this.
 struct Sound
 {
-    int sampleRate;
-    int numChannels;
-    float[] data; // data layout: machine endianness, interleaved channels
+    int sampleRate;  /// Sample rate.
+    int numChannels; /// Number of interleaved channels in data.
+    float[] data;    /// data layout: machine endianness, interleaved channels. Contains numChannels * lengthInFrames() samples.
+
+    this(int sampleRate, int numCHannels, float[] data)
+    {
+        this.sampleRate = sampleRate;
+        this.numChannels = numChannels;
+        this.data = data;
+    }
+
+    /// Returns: Length in number of frames.
+    int lengthInFrames() pure const nothrow
+    {
+        return data.length / numChannels;
+    }
+
+    /// Returns: Length in seconds.
+    double lengthInSeconds() pure const nothrow
+    {
+        return lengthInFrames() / cast(double)sampleRate;
+    }
 }
 
 /// The one type of Exception thrown in this library
