@@ -18,12 +18,12 @@ import waved;
 
 void main()
 {
-    Sound sound = decodeWAV("my_wav_file.wav");
-    writefln("channels = %s", sf.numChannels);
-    writefln("samplerate = %s", sf.sampleRate);
-    writefln("samples = %s", sf.data.length);
+    Sound input = decodeWAV("my_wav_file.wav");
+    writefln("channels = %s", input.numChannels);
+    writefln("samplerate = %s", input.sampleRate);
+    writefln("samples = %s", input.data.length);
 
-    sound.encodeWAV("copy.wav");
+    input.encodeWAV("copy.wav");
 }
 
 ```
