@@ -14,7 +14,7 @@ struct Sound
     int numChannels; /// Number of interleaved channels in data.
     float[] data;    /// data layout: machine endianness, interleaved channels. Contains numChannels * lengthInFrames() samples.
 
-    this(int sampleRate, int numCHannels, float[] data)
+    this(int sampleRate, int numChannels, float[] data)
     {
         this.sampleRate = sampleRate;
         this.numChannels = numChannels;
