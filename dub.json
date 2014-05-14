@@ -1,7 +1,7 @@
 {
     "name": "wave-d",
     "description": "WAV file loader/emitter.",
-    "homepage": "http://github.com/p0nce/wave-d/",
+    "homepage": "http://github.com/d-gamedev-team/wave-d/",
     "license": "public domain",
 
     "targetType": "library",
