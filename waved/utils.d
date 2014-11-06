@@ -24,7 +24,7 @@ struct Sound
     /// Returns: Length in number of frames.
     int lengthInFrames() pure const nothrow
     {
-        return data.length / numChannels;
+        return cast(int)(data.length) / numChannels;
     }
 
     /// Returns: Length in seconds.
@@ -202,10 +202,10 @@ void getRIFFChunkHeader(R)(ref R input, out uint chunkId, out uint chunkSize) if
 }
 
 // Writes RIFF chunk header (you have to count size manually for now...).
-void writeRIFFChunkHeader(R)(ref R output, uint chunkId, uint chunkSize) if (isOutputRange!(R, ubyte))
+void writeRIFFChunkHeader(R)(ref R output, uint chunkId, size_t chunkSize) if (isOutputRange!(R, ubyte))
 {
-    writeBE!uint(output, chunkId);
-    writeLE!uint(output, chunkSize);
+    writeBE!uint(output, cast(uint)(chunkId));
+    writeLE!uint(output, cast(uint)(chunkSize));
 }
 
 template RIFFChunkId(string id)
