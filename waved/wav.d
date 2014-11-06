@@ -221,10 +221,10 @@ void encodeWAV(R)(ref R output, Sound sound) if (isOutputRange!(R, ubyte))
     output.writeLE!ushort(cast(ushort)(sound.numChannels));
     output.writeLE!uint(cast(ushort)(sound.sampleRate));
 
-    uint bytesPerSec = sound.sampleRate * sound.numChannels * float.sizeof;
-    output.writeLE!uint(bytesPerSec);
+    size_t bytesPerSec = sound.sampleRate * sound.numChannels * float.sizeof;
+    output.writeLE!uint( cast(uint)(bytesPerSec));
 
-    int bytesPerFrame = sound.numChannels * float.sizeof;
+    int bytesPerFrame = cast(int)(sound.numChannels * float.sizeof);
     output.writeLE!ushort(cast(ushort)bytesPerFrame);
 
     output.writeLE!ushort(32);
