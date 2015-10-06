@@ -91,7 +91,17 @@ auto popInteger(R, int NumBytes, bool WantSigned, bool LittleEndian)(ref R input
     }
 
     static if (WantSigned)
-        return cast(Signed!T)result;
+    {
+        // make sure the sign bit is extended to the top in case of a larger result value
+        Signed!T signedResult = cast(Signed!T)result;
+        enum bits = 8 * (T.sizeof - NumBytes);
+        static if (bits > 0)
+        {
+            signedResult = signedResult << bits;
+            signedResult = signedResult >> bits; // signed right shift, replicates sign bit
+        }
+        return signedResult;
+    }
     else
         return result;
 }
@@ -146,7 +156,7 @@ void writeLE(T, R)(ref R output, T n) if (isOutputRange!(R, ubyte))
 }
 
 
-alias pop24bitsLE(R) = popInteger!(R, 3, false, true);
+alias pop24bitsLE(R) = popInteger!(R, 3, true, true);
 
 
 // read/write 32-bits float
