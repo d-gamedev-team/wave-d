@@ -11,26 +11,82 @@ import std.file,
 struct Sound
 {
     int sampleRate;  /// Sample rate.
-    int numChannels; /// Number of interleaved channels in data.
-    float[] data;    /// data layout: machine endianness, interleaved channels. Contains numChannels * lengthInFrames() samples.
 
-    this(int sampleRate, int numChannels, float[] data)
+    deprecated("Use channels instead") alias numChannels = channels;
+    int channels; /// Number of interleaved channels in data.
+
+    deprecated("Use samples instead") alias data = samples;
+    float[] samples;    /// data layout: machine endianness, interleaved channels. Contains numChannels * lengthInFrames() samples.
+
+    /// Build with interleaved data.
+    this(int sampleRate, int channels, float[] samples)
     {
         this.sampleRate = sampleRate;
-        this.numChannels = numChannels;
-        this.data = data;
+        this.channels = channels;
+        this.samples = samples;
+    }
+
+    /// Build with channel data. Interleave them.
+    /// channels must have the same length.
+    this(int sampleRate, float[][] planarSamples)
+    {
+        assert(planarSamples.length > 0);
+        int N = cast(int)planarSamples[0].length;
+        this.sampleRate = sampleRate;
+        this.channels = cast(int)(planarSamples.length);        
+        this.samples = new float[N * channels];
+        foreach (chan; 0..channels)
+        {
+            assert(planarSamples[chan].length == N);
+            foreach (frame; 0..N)
+            {
+                sample(chan, frame) = planarSamples[chan][frame];
+            }
+        }
     }
 
     /// Returns: Length in number of frames.
     int lengthInFrames() pure const nothrow
     {
-        return cast(int)(data.length) / numChannels;
+        return cast(int)(samples.length) / channels;
     }
 
     /// Returns: Length in seconds.
     double lengthInSeconds() pure const nothrow
     {
         return lengthInFrames() / cast(double)sampleRate;
+    }
+
+    /// Direct sample access.
+    ref inout(float) sample(int chan, int frame) pure inout nothrow @nogc
+    {
+        assert(cast(uint)chan < channels);
+        return samples[frame * channels + chan];
+    }
+
+    /// Allocates a new array and put deinterleaved channel samples inside.
+    float[] channel(int chan) pure const nothrow
+    {
+        int N = lengthInFrames();
+        float[] c = new float[N];
+        foreach(frame; 0..N)
+            c[frame] = this.sample(chan, frame);
+        return c;
+    }
+
+    /// Returns: Another Sound with one channel (left).
+    Sound makeMono() pure const nothrow
+    {
+        assert(channels > 0);
+        Sound output;
+        output.sampleRate = this.sampleRate;
+        output.samples = new float[this.lengthInFrames()];
+        output.channels = 1;
+        for (int i = 0; i < this.lengthInFrames(); ++i)
+        {
+            output.sample(0, i) = this.sample(0, i); // take left only
+        }
+        return output;
     }
 }
 
@@ -43,8 +99,9 @@ final class WavedException : Exception
     }
 }
 
+package:
 
-private template IntegerLargerThan(int numBytes) if (numBytes >= 1 && numBytes <= 8)
+template IntegerLargerThan(int numBytes) if (numBytes >= 1 && numBytes <= 8)
 {
     static if (numBytes == 1)
         alias IntegerLargerThan = ubyte;

@@ -120,19 +120,19 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
             uint numFrames = chunkSize / frameSize;
             uint numSamples = numFrames * numChannels;
 
-            result.data.length = numSamples;
+            result.samples.length = numSamples;
 
             if (audioFormat == FloatingPointIEEE)
             {
                 if (bytePerSample == 4)
                 {
                     for (uint i = 0; i < numSamples; ++i)
-                        result.data[i] = popFloatLE(input);
+                        result.samples[i] = popFloatLE(input);
                 }
                 else if (bytePerSample == 8)
                 {
                     for (uint i = 0; i < numSamples; ++i)
-                        result.data[i] = popDoubleLE(input);
+                        result.samples[i] = popDoubleLE(input);
                 }
                 else
                     throw new WavedException("Unsupported bit-depth for floating point data, should be 32 or 64.");
@@ -144,7 +144,7 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
                     for (uint i = 0; i < numSamples; ++i)
                     {
                         ubyte b = popUbyte(input);
-                        result.data[i] = (b - 128) / 127.0;
+                        result.samples[i] = (b - 128) / 127.0;
                     }
                 }
                 else if (bytePerSample == 2)
@@ -152,7 +152,7 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
                     for (uint i = 0; i < numSamples; ++i)
                     {
                         int s = popLE!short(input);
-                        result.data[i] = s / 32767.0;
+                        result.samples[i] = s / 32767.0;
                     }
                 }
                 else if (bytePerSample == 3)
@@ -160,7 +160,7 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
                     for (uint i = 0; i < numSamples; ++i)
                     {
                         int s = pop24bitsLE!R(input);
-                        result.data[i] = s / 8388607.0;
+                        result.samples[i] = s / 8388607.0;
                     }
                 }
                 else if (bytePerSample == 4)
@@ -168,7 +168,7 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
                     for (uint i = 0; i < numSamples; ++i)
                     {
                         int s = popLE!int(input);
-                        result.data[i] = s / 2147483648.0;
+                        result.samples[i] = s / 2147483648.0;
                     }
                 }
                 else
@@ -193,7 +193,7 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
         throw new WavedException("'data' chunk not found.");
  
 
-    result.numChannels = numChannels;
+    result.channels = numChannels;
     result.sampleRate = sampleRate;
 
     return result;
@@ -207,31 +207,31 @@ void encodeWAV(R)(ref R output, Sound sound) if (isOutputRange!(R, ubyte))
 
 
     // Avoid a number of edge cases.
-    if (sound.numChannels < 0 || sound.numChannels > 1024)
-        throw new WavedException(format("Can't save a WAV with %s channels.", sound.numChannels));
+    if (sound.channels < 0 || sound.channels > 1024)
+        throw new WavedException(format("Can't save a WAV with %s channels.", sound.channels));
 
     // RIFF header
-    output.writeRIFFChunkHeader(RIFFChunkId!"RIFF", 4 + (4 + 4 + 16) + (4 + 4 + float.sizeof * sound.data.length) );
+    output.writeRIFFChunkHeader(RIFFChunkId!"RIFF", 4 + (4 + 4 + 16) + (4 + 4 + float.sizeof * sound.samples.length) );
     output.writeBE!uint(RIFFChunkId!"WAVE");
 
     // 'fmt ' sub-chunk
     output.writeRIFFChunkHeader(RIFFChunkId!"fmt ", 0x10);
     output.writeLE!ushort(FloatingPointIEEE);
     
-    output.writeLE!ushort(cast(ushort)(sound.numChannels));
+    output.writeLE!ushort(cast(ushort)(sound.channels));
     output.writeLE!uint(cast(ushort)(sound.sampleRate));
 
-    size_t bytesPerSec = sound.sampleRate * sound.numChannels * float.sizeof;
+    size_t bytesPerSec = sound.sampleRate * sound.channels * float.sizeof;
     output.writeLE!uint( cast(uint)(bytesPerSec));
 
-    int bytesPerFrame = cast(int)(sound.numChannels * float.sizeof);
+    int bytesPerFrame = cast(int)(sound.channels * float.sizeof);
     output.writeLE!ushort(cast(ushort)bytesPerFrame);
 
     output.writeLE!ushort(32);
 
     // data sub-chunk
-    output.writeRIFFChunkHeader(RIFFChunkId!"data", float.sizeof * sound.data.length);
-    foreach (float f; sound.data)
+    output.writeRIFFChunkHeader(RIFFChunkId!"data", float.sizeof * sound.samples.length);
+    foreach (float f; sound.samples)
         output.writeFloatLE(f);
 }
 

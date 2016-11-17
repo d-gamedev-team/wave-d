@@ -19,9 +19,9 @@ import waved;
 void main()
 {
     Sound input = decodeWAV("my_wav_file.wav");
-    writefln("channels = %s", input.numChannels);
+    writefln("channels = %s", input.channels);
     writefln("samplerate = %s", input.sampleRate);
-    writefln("samples = %s", input.data.length);
+    writefln("samples = %s", input.samples.length);
 
     input.encodeWAV("copy.wav");
 }
