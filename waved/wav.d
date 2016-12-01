@@ -63,10 +63,17 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
     int bitsPerSample;
 
     Sound result;
-
     // while chunk is not
     while (!input.empty)
     {
+        // Some corrupted WAV files in the wild finish with one
+        // extra 0 byte after an AFAn chunk, very odd
+        static if (hasLength!R)
+        {
+            if (input.length == 1 && input.front() == 0)
+                break;
+        }
+
         uint chunkId, chunkSize;
         getRIFFChunkHeader(input, chunkId, chunkSize); 
         if (chunkId == RIFFChunkId!"fmt ")
