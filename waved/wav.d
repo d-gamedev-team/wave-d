@@ -226,6 +226,10 @@ void encodeWAV(R)(ref R output, Sound sound) if (isOutputRange!(R, ubyte))
     output.writeLE!ushort(FloatingPointIEEE);
     
     output.writeLE!ushort(cast(ushort)(sound.channels));
+
+    if (sound.sampleRate == 0)
+        throw new WavedException("Can't save a WAV with sample-rate of 0hz. Assign the sampleRate field.");
+
     output.writeLE!uint(cast(ushort)(sound.sampleRate));
 
     size_t bytesPerSec = sound.sampleRate * sound.channels * float.sizeof;
