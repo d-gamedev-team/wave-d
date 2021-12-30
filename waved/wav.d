@@ -103,7 +103,7 @@ Sound decodeWAV(R)(R input) if (isInputRange!R)
             int bytesPerFrame = popLE!ushort(input);
             bitsPerSample = popLE!ushort(input);
 
-            if (bitsPerSample != 8 && bitsPerSample != 16 && bitsPerSample != 24 && bitsPerSample != 32) 
+            if (bitsPerSample != 8 && bitsPerSample != 16 && bitsPerSample != 24 && bitsPerSample != 32 && bitsPerSample != 64) 
                 throw new WavedException(format("Unsupported bitdepth %s.", cast(uint)bitsPerSample));
 
             if (bytesPerFrame != (bitsPerSample / 8) * numChannels)
